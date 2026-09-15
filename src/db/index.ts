@@ -1,10 +1,5 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import Database from 'better-sqlite3';
-import * as schema from './schema';
-import dotenv from 'dotenv';
+// Database layer removed — history is now stored in Supabase.
+// This file is kept as a stub to avoid import errors during migration.
+// All DB operations are now in src/lib/analysis.ts via the Supabase client.
 
-dotenv.config();
-
-const dbPath = process.env.DATABASE_URL || 'sqlite.db';
-const sqlite = new Database(dbPath);
-export const db = drizzle(sqlite, { schema });
+export const db = null;

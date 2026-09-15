@@ -156,18 +156,8 @@ function buildRobustness(verdict: Verdict, confidence: number): RobustnessRow[] 
       { id: "original", label: "Original", note: "Unmodified upload", delta: 0 },
       { id: "jpeg", label: "JPEG q60", note: "Recompressed", delta: -4.2 },
       { id: "resized", label: "Resized 50%", note: "Bicubic downscale", delta: -6.8 },
-      {
-        id: "screenshot",
-        label: "Screenshot",
-        note: "Re-captured from display",
-        delta: -9.5,
-      },
-      {
-        id: "edited",
-        label: "Lightly edited",
-        note: "Curves + light crop",
-        delta: -3.1,
-      },
+      { id: "screenshot", label: "Screenshot", note: "Re-captured from display", delta: -9.5 },
+      { id: "edited", label: "Lightly edited", note: "Curves + light crop", delta: -3.1 },
     ];
 
   return perturbations.map((p) => {
@@ -190,17 +180,20 @@ export interface AnalyzeInput {
 
 export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult> {
   const seed = hash(`${input.filename}:${input.bytes}:${input.width}`);
+
   
   try {
     const imgResponse = await fetch(input.imageUrl);
     const blob = await imgResponse.blob();
     const formData = new FormData();
     formData.append("file", blob, input.filename);
+
     
     const apiRes = await fetch("http://localhost:8000/scan", {
       method: "POST",
       body: formData,
     });
+
     
     if (apiRes.ok) {
       const data = await apiRes.json();
@@ -295,6 +288,8 @@ export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult>
 
 /* ---------------------------------- history --------------------------------- */
 
+import { supabase } from './supabase';
+
 export interface HistoryEntry {
   id: string;
   filename: string;
@@ -303,8 +298,6 @@ export interface HistoryEntry {
   verdict: Verdict;
   confidence: number;
 }
-
-const HISTORY_KEY = "signalscope.history.v1";
 
 export const SEED_HISTORY: HistoryEntry[] = [
   {
@@ -333,28 +326,115 @@ export const SEED_HISTORY: HistoryEntry[] = [
   },
 ];
 
-export async function loadHistory(): Promise<HistoryEntry[]> {
-  if (typeof window === "undefined") return SEED_HISTORY;
+/**
+ * Compress an image URL to a tiny 80×80 JPEG base64 (~3-5 KB).
+ * Small enough to store in a Supabase TEXT column — persists across browser reloads.
+ */
+async function compressToThumbnail(imageUrl: string): Promise<string | null> {
+  if (!imageUrl || typeof document === 'undefined') return null;
   try {
-    const res = await fetch('/api/history');
-    if (!res.ok) throw new Error("Failed to load");
-    const data = await res.json();
-    return data.length ? data : SEED_HISTORY;
+    return await new Promise<string | null>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const SIZE = 80;
+        const canvas = document.createElement('canvas');
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        // Cover-crop to square
+        const scale = Math.max(SIZE / img.width, SIZE / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = () => resolve(null);
+      img.src = imageUrl;
+    });
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Load scan history from Supabase.
+ * - Not logged in → SEED_HISTORY (demo data)
+ * - Logged in, no scans → [] (empty, show CTA)
+ * - Logged in, has scans → real data with persistent thumbnails
+ */
+export async function loadHistory(): Promise<HistoryEntry[]> {
+  if (typeof window === 'undefined') return SEED_HISTORY;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return SEED_HISTORY;
+
+    const { data, error } = await supabase
+      .from('scans')
+      .select('id, file_name, verdict, confidence, created_at, thumbnail_url')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      if (error.code === '42P01' || error.code === '42703') {
+        console.info('[SignalScope] scans table missing or wrong schema — run the SQL migration.');
+      } else {
+        console.warn('[SignalScope] loadHistory error:', error.message);
+      }
+      return SEED_HISTORY;
+    }
+
+    if (!data || data.length === 0) return []; // Logged in but no scans yet
+
+    return data.map((row) => ({
+      id: row.id,
+      filename: row.file_name,
+      createdAt: row.created_at,
+      thumbnail: row.thumbnail_url ?? '',  // ✅ Persists across reloads
+      verdict: row.verdict as Verdict,
+      confidence: row.confidence,
+    }));
+  } catch (e: any) {
+    console.warn('[SignalScope] loadHistory exception:', e?.message ?? e);
     return SEED_HISTORY;
   }
 }
 
-export async function saveToHistory(entry: HistoryEntry) {
-  if (typeof window === "undefined") return;
+/**
+ * Save a scan result to Supabase.
+ * Compresses the image to an 80×80 JPEG and stores as base64 in `thumbnail_url`.
+ */
+export async function saveToHistory(entry: HistoryEntry): Promise<void> {
+  if (typeof window === 'undefined') return;
   try {
-    await fetch('/api/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(entry),
-    });
-  } catch {
-    /* storage full or unavailable — history is non-critical */
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.warn('[SignalScope] saveToHistory: no active session — scan not saved');
+      return;
+    }
+
+    const thumbnail_url = await compressToThumbnail(entry.thumbnail);
+
+    const { error } = await supabase.from('scans').upsert(
+      {
+        id: entry.id,
+        user_id: session.user.id,
+        file_name: entry.filename,
+        verdict: entry.verdict,
+        confidence: entry.confidence,
+        created_at: entry.createdAt,
+        thumbnail_url: thumbnail_url ?? null,
+      },
+      { onConflict: 'id' }
+    );
+
+    if (error) {
+      console.warn('[SignalScope] saveToHistory failed:', error.message, '| code:', error.code);
+    } else {
+      console.info('[SignalScope] ✅ Scan saved to Supabase:', entry.id);
+    }
+  } catch (e: any) {
+    console.warn('[SignalScope] saveToHistory exception:', e?.message ?? e);
   }
 }
 
@@ -366,8 +446,8 @@ export function formatBytes(bytes: number) {
 
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
   });
 }
