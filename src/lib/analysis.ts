@@ -36,15 +36,22 @@ export interface RobustnessRow {
 }
 
 export interface Provenance {
-  c2pa: string;
-  exif: string;
-  editingHistory: string;
-  source: string;
+  c2pa: { status: string; label?: string };
+  exif: { status: string; label?: string; fields?: any };
+  editingHistory: { status: string; label?: string };
+  source: { status: string; label?: string };
 }
 
-export interface Attribution {
-  family: string;
-  probability: number;
+export interface GeneratorAttribution {
+  status: string;
+  reason?: string;
+  family?: string;
+  probability?: number;
+}
+
+export interface CaptionConsistency {
+  status: string;
+  reason?: string;
 }
 
 export interface AnalysisResult {
@@ -60,8 +67,8 @@ export interface AnalysisResult {
   evidence: EvidenceItem[];
   robustness: RobustnessRow[];
   provenance: Provenance;
-  attribution: Attribution[];
-  caption: string;
+  attribution?: GeneratorAttribution;
+  captionConsistency?: CaptionConsistency;
 }
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
@@ -200,6 +207,25 @@ export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult>
       const verdict = data.verdict.label === "AI-generated" ? "synthetic" : "authentic";
       const confidence = Math.round(data.verdict.confidence * 1000) / 10;
       
+      let dynamicEvidence = buildEvidence(seed);
+      if (data.explanation && data.explanation.evidence && Array.isArray(data.explanation.evidence)) {
+        dynamicEvidence = data.explanation.evidence.map((item: any, i: number) => ({
+          id: item.id || `${item.kind}-${i}`,
+          index: `0${i + 1}`,
+          kind: item.kind,
+          title: item.title,
+          summary: item.description,
+          detail: `Confidence: ${(item.confidence * 100).toFixed(1)}%`,
+          region: {
+            x: (item.bbox.x / input.width) * 100,
+            y: (item.bbox.y / input.height) * 100,
+            w: (item.bbox.width / input.width) * 100,
+            h: (item.bbox.height / input.height) * 100,
+          },
+          weight: item.weight,
+        }));
+      }
+
       return {
         id: `scan_${seed.toString(36)}_${Date.now().toString(36)}`,
         filename: input.filename,
@@ -210,23 +236,22 @@ export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult>
         bytes: input.bytes,
         verdict,
         confidence,
-        evidence: buildEvidence(seed),
+        evidence: dynamicEvidence,
         robustness: buildRobustness(verdict, confidence),
-        provenance: {
-          c2pa: verdict === "synthetic" ? "No signed C2PA manifest found" : "C2PA manifest present but unverified issuer",
-          exif: verdict === "authentic" ? "Camera make/model, lens and exposure fields intact" : "EXIF largely absent",
-          editingHistory: verdict === "authentic" ? "One re-save detected" : "Re-encoded at least twice",
-          source: "Uploaded by user — no upstream URL available",
+        provenance: data.provenance || {
+          c2pa: { status: "not_present", label: "Not present" },
+          exif: { status: "not_available", label: "No camera metadata available" },
+          editingHistory: { status: "not_determined", label: "Not determined" },
+          source: { status: "uploaded_directly", label: "Uploaded directly to SignalScope" },
         },
-        attribution: verdict === "synthetic"
-            ? [
-                { family: "Latent diffusion", probability: 0.54 },
-                { family: "Unattributed / other", probability: 0.46 },
-              ]
-            : [
-                { family: "Unattributed / other", probability: 0.62 },
-              ],
-        caption: "A scanned image.",
+        attribution: data.generatorAttribution || {
+          status: "not_available",
+          reason: "No generator-attribution model is installed."
+        },
+        captionConsistency: data.captionConsistency || {
+          status: "not_evaluated",
+          reason: "No independent image-caption consistency analysis is available."
+        },
       };
     }
   } catch (error) {
@@ -252,38 +277,19 @@ export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult>
     evidence: buildEvidence(seed),
     robustness: buildRobustness(verdict, confidence),
     provenance: {
-      c2pa:
-        verdict === "synthetic"
-          ? "No signed C2PA manifest found"
-          : "C2PA manifest present but unverified issuer",
-      exif:
-        verdict === "authentic"
-          ? "Camera make/model, lens and exposure fields intact"
-          : "EXIF largely absent; only dimensions and colour profile remain",
-      editingHistory:
-        verdict === "authentic"
-          ? "One re-save detected (colour profile conversion)"
-          : "Re-encoded at least twice; no editor signature",
-      source: "Uploaded by user — no upstream URL available",
+      c2pa: { status: "not_present", label: "Not present" },
+      exif: { status: "not_available", label: "No camera metadata available" },
+      editingHistory: { status: "not_determined", label: "Not determined" },
+      source: { status: "uploaded_directly", label: "Uploaded directly to SignalScope" },
     },
-    attribution:
-      verdict === "synthetic"
-        ? [
-            { family: "Latent diffusion", probability: 0.54 },
-            { family: "Cascaded diffusion", probability: 0.21 },
-            { family: "GAN (StyleGAN family)", probability: 0.14 },
-            { family: "Unattributed / other", probability: 0.11 },
-          ]
-        : [
-            { family: "Unattributed / other", probability: 0.62 },
-            { family: "Latent diffusion", probability: 0.19 },
-            { family: "GAN (StyleGAN family)", probability: 0.11 },
-            { family: "Cascaded diffusion", probability: 0.08 },
-          ],
-    caption:
-      verdict === "synthetic"
-        ? "A close-up subject lit from one side, with unusually even surface detail."
-        : "A photographed scene with mixed natural and artificial lighting.",
+    attribution: {
+      status: "not_available",
+      reason: "No generator-attribution model is installed."
+    },
+    captionConsistency: {
+      status: "not_evaluated",
+      reason: "No independent image-caption consistency analysis is available."
+    },
   };
 }
 
