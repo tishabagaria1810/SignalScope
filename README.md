@@ -245,6 +245,6 @@ Confidence is calibrated. The decision threshold (0.50 by default, 0.35 in some 
 High JPEG compression (Quality <= 20) and aggressive spatial downscaling (Scale <= 25%) attenuate high-frequency generative artifacts, significantly reducing classification accuracy.
 
 ### 9. Demo Video & Deployment Links
-- **Demo Video:** TODO
+- **Demo Video:** (https://drive.google.com/drive/folders/1i4Xvl8k6doj4xKroFw7K0esO_STG0IEB?usp=sharing)
 - **Deployed Application:** Not yet deployed
 
