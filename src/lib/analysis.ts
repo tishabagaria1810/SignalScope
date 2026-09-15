@@ -181,7 +181,6 @@ export interface AnalyzeInput {
   bytes: number;
 }
 
-/** Replace this body with a fetch to the prediction API when it exists. */
 export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult> {
   const seed = hash(`${input.filename}:${input.bytes}:${input.width}`);
   
@@ -328,25 +327,26 @@ export const SEED_HISTORY: HistoryEntry[] = [
   },
 ];
 
-export function loadHistory(): HistoryEntry[] {
+export async function loadHistory(): Promise<HistoryEntry[]> {
   if (typeof window === "undefined") return SEED_HISTORY;
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    if (!raw) return SEED_HISTORY;
-    const parsed = JSON.parse(raw) as HistoryEntry[];
-    return [...parsed, ...SEED_HISTORY];
+    const res = await fetch('/api/history');
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    return data.length ? data : SEED_HISTORY;
   } catch {
     return SEED_HISTORY;
   }
 }
 
-export function saveToHistory(entry: HistoryEntry) {
+export async function saveToHistory(entry: HistoryEntry) {
   if (typeof window === "undefined") return;
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    const existing = raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
-    const next = [entry, ...existing].slice(0, 8);
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    await fetch('/api/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
   } catch {
     /* storage full or unavailable — history is non-critical */
   }
