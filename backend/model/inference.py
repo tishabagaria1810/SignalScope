@@ -161,7 +161,9 @@ class SignalScopeDetector(BaseDetector):
             },
             "visual_evidence": visual_evidence,
             "explanation": explanation,
-            "metadata_evidence": meta,
+            "provenance": meta.get("provenance", {}),
+            "generatorAttribution": meta.get("generatorAttribution", {}),
+            "captionConsistency": meta.get("captionConsistency", {}),
         }
 
         logger.debug(f"Inference result: {label} (confidence={confidence:.4f})")
