@@ -190,3 +190,61 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## SIH 2026 Hackathon Requirements
+
+### 1. Modules Built
+- **Core Module:** AI vs. Real Image Classification.
+- **Bonus Module A (Explainable AI):** Visual explainability using Grad-CAM with textual descriptions.
+- **Bonus Module C/G (Robustness):** Robustness evaluation against JPEG compression and resizing.
+- **Bonus Module D (Provenance):** C2PA / Content Credentials parsing.
+- **Bonus Module E (Multimodal):** Caption consistency verification.
+
+### 2. Setup and Run Instructions
+To reproduce predictions locally in under 10 minutes:
+1. Ensure Python 3.10+ and Node.js are installed.
+2. Clone the repository and install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   npm i
+   ```
+3. Run the prediction script on any image:
+   ```bash
+   python model/predict.py public/real_test.jpg
+   ```
+4. Start the frontend:
+   ```bash
+   npm run dev
+   ```
+
+### 3. Datasets, Sources, and Licenses
+- **Dataset Size:** 9250 standard test samples, 7500 unseen generator test samples.
+- **Sources:** Various open-source datasets and internal generative AI sources.
+- **Licenses:** MIT / Open source where applicable.
+
+### 4. Metrics
+- **Overall AUC (Standard Test Split):** 0.9828
+- **Unseen-generator-split AUC:** 0.9847
+- **Macro-F1:** 0.9361
+- **Accuracy:** 0.9361 (Standard), 0.9424 (Unseen Generator)
+- **FPR at chosen threshold (0.5):** 0.068
+- **Confusion Matrix:** True Negatives: 4427, False Positives: 323, False Negatives: 268, True Positives: 4232
+
+### 5. Architecture Overview
+- **Model:** ResNet-18 Transfer Learning classifier with custom classification head.
+- **Input:** 224x224 RGB image (with center crop validation for high resolutions).
+- **Secondary Feature:** VAE 8x8 Latent Block Discontinuity Analysis for diffusion trace detection.
+
+### 6. Robustness Approach
+Evaluated against JPEG compression, spatial resizing, and Gaussian noise. The model maintains >0.97 AUC for JPEG qualities above 40.
+
+### 7. Calibration Approach
+Confidence is calibrated. The decision threshold (0.50 by default, 0.35 in some configs for unseen generators) maps directly to prediction likelihood, offering 'Likely AI', 'Likely Authentic', and 'Uncertain' margins.
+
+### 8. Known Limitations
+High JPEG compression (Quality <= 20) and aggressive spatial downscaling (Scale <= 25%) attenuate high-frequency generative artifacts, significantly reducing classification accuracy.
+
+### 9. Demo Video & Deployment Links
+- **Demo Video:** TODO
+- **Deployed Application:** Not yet deployed
+
