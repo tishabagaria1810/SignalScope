@@ -16,7 +16,7 @@ function HistoryPage() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   useEffect(() => {
-    setHistory(loadHistory());
+    loadHistory().then(setHistory);
   }, []);
 
   return (

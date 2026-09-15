@@ -181,61 +181,90 @@ export interface AnalyzeInput {
   bytes: number;
 }
 
-/** Replace this body with a fetch to the prediction API when it exists. */
 export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult> {
-  const seed = hash(`${input.filename}:${input.bytes}:${input.width}`);
-  const bucket = seed % 10;
-  const verdict: Verdict = bucket < 5 ? "synthetic" : bucket < 8 ? "authentic" : "uncertain";
-  const base =
-    verdict === "uncertain" ? 51 + (seed % 8) : verdict === "authentic" ? 76 + (seed % 16) : 79 + (seed % 18);
-  const confidence = Math.round(Math.min(96, base) * 10) / 10;
+  try {
+    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    
+    // Fetch the Blob from the object URL
+    const imageRes = await fetch(input.imageUrl);
+    if (!imageRes.ok) throw new Error("Failed to read image for analysis");
+    const imageBlob = await imageRes.blob();
 
-  return {
-    id: `scan_${seed.toString(36)}_${Date.now().toString(36)}`,
-    filename: input.filename,
-    createdAt: new Date().toISOString(),
-    imageUrl: input.imageUrl,
-    width: input.width,
-    height: input.height,
-    bytes: input.bytes,
-    verdict,
-    confidence,
-    evidence: buildEvidence(seed),
-    robustness: buildRobustness(verdict, confidence),
-    provenance: {
-      c2pa:
-        verdict === "synthetic"
-          ? "No signed C2PA manifest found"
-          : "C2PA manifest present but unverified issuer",
-      exif:
-        verdict === "authentic"
-          ? "Camera make/model, lens and exposure fields intact"
-          : "EXIF largely absent; only dimensions and colour profile remain",
-      editingHistory:
-        verdict === "authentic"
-          ? "One re-save detected (colour profile conversion)"
-          : "Re-encoded at least twice; no editor signature",
-      source: "Uploaded by user — no upstream URL available",
-    },
-    attribution:
-      verdict === "synthetic"
-        ? [
-            { family: "Latent diffusion", probability: 0.54 },
-            { family: "Cascaded diffusion", probability: 0.21 },
-            { family: "GAN (StyleGAN family)", probability: 0.14 },
-            { family: "Unattributed / other", probability: 0.11 },
-          ]
-        : [
-            { family: "Unattributed / other", probability: 0.62 },
-            { family: "Latent diffusion", probability: 0.19 },
-            { family: "GAN (StyleGAN family)", probability: 0.11 },
-            { family: "Cascaded diffusion", probability: 0.08 },
-          ],
-    caption:
-      verdict === "synthetic"
-        ? "A close-up subject lit from one side, with unusually even surface detail."
-        : "A photographed scene with mixed natural and artificial lighting.",
-  };
+    const formData = new FormData();
+    formData.append("file", imageBlob, input.filename);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+
+    const response = await fetch(`${aiServiceUrl}/predict`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`AI Service returned ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    // Validate response gracefully
+    if (!data || typeof data.verdict !== 'string') {
+      throw new Error("Invalid response format from AI service");
+    }
+
+    return {
+      id: `scan_${Date.now().toString(36)}`,
+      filename: input.filename,
+      createdAt: new Date().toISOString(),
+      imageUrl: input.imageUrl,
+      width: input.width,
+      height: input.height,
+      bytes: input.bytes,
+      verdict: data.verdict as Verdict,
+      confidence: typeof data.confidence === 'number' ? data.confidence : 0,
+      evidence: Array.isArray(data.evidence) ? data.evidence : [],
+      robustness: Array.isArray(data.robustness) ? data.robustness : [],
+      provenance: {
+        c2pa: "C2PA validation pending",
+        exif: "EXIF parsing pending",
+        editingHistory: "Unknown",
+        source: "Uploaded by user",
+      },
+      attribution: [],
+      caption: data.caption || "",
+    };
+  } catch (error) {
+    console.error("AI Analysis Failed:", error);
+    // Return a graceful error object instead of crashing
+    return {
+      id: `error_${Date.now()}`,
+      filename: input.filename,
+      createdAt: new Date().toISOString(),
+      imageUrl: input.imageUrl,
+      width: input.width,
+      height: input.height,
+      bytes: input.bytes,
+      verdict: "uncertain",
+      confidence: 0,
+      evidence: [{
+        id: "error",
+        index: "01",
+        kind: "texture",
+        title: "Analysis Failed",
+        summary: error instanceof Error ? error.message : "Unknown error",
+        detail: "Could not complete analysis. Ensure AI service is running.",
+        region: { x: 0, y: 0, w: 100, h: 100 },
+        weight: 1
+      }],
+      robustness: [],
+      provenance: { c2pa: "", exif: "", editingHistory: "", source: "" },
+      attribution: [],
+      caption: "Analysis failed.",
+    };
+  }
 }
 
 /* ---------------------------------- history --------------------------------- */
@@ -278,25 +307,26 @@ export const SEED_HISTORY: HistoryEntry[] = [
   },
 ];
 
-export function loadHistory(): HistoryEntry[] {
+export async function loadHistory(): Promise<HistoryEntry[]> {
   if (typeof window === "undefined") return SEED_HISTORY;
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    if (!raw) return SEED_HISTORY;
-    const parsed = JSON.parse(raw) as HistoryEntry[];
-    return [...parsed, ...SEED_HISTORY];
+    const res = await fetch('/api/history');
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    return data.length ? data : SEED_HISTORY;
   } catch {
     return SEED_HISTORY;
   }
 }
 
-export function saveToHistory(entry: HistoryEntry) {
+export async function saveToHistory(entry: HistoryEntry) {
   if (typeof window === "undefined") return;
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    const existing = raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
-    const next = [entry, ...existing].slice(0, 8);
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    await fetch('/api/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
   } catch {
     /* storage full or unavailable — history is non-critical */
   }
