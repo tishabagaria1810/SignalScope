@@ -176,7 +176,7 @@ def generate_visual_explanation(
     transform = get_inference_transforms()
     # Grad-CAM requires gradient tracking on the tensor
     tensor = transform(pil_image.resize(IMAGE_SIZE, resample=Image.Resampling.BILINEAR)).unsqueeze(0).to(DEVICE)
-    tensor.requires_grad(True)
+    tensor.requires_grad = True
 
     target_layer = model.get_gradcam_target_layer()
     gradcam = GradCAM(model, target_layer)
@@ -219,13 +219,7 @@ def generate_visual_explanation(
         "visual_evidence": {
             "heatmap_available": True,
             "target_layer": "backbone.layer4[-1]",
-            "peak_saliency_intensity": round(peak_intensity, 4),
-            "regional_distribution": {
-                "top": round(top_intensity, 4),
-                "bottom": round(bottom_intensity, 4),
-                "left": round(left_intensity, 4),
-                "right": round(right_intensity, 4),
-            }
+            "peak_saliency_intensity": round(peak_intensity, 4)
         },
         "explanation": {
             "summary": summary,

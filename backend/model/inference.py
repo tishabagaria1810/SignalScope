@@ -146,6 +146,8 @@ class SignalScopeDetector(BaseDetector):
             visual_evidence = explanation_data["visual_evidence"]
             explanation = explanation_data["explanation"]
         except Exception as exp_err:
+            import traceback
+            traceback.print_exc()
             logger.debug(f"Explainability generation bypassed: {exp_err}")
             visual_evidence = {"heatmap_available": False}
             explanation = {"summary": f"Verdict: {label}", "cues": []}
