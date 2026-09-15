@@ -7,6 +7,8 @@ import { AccountMenu } from "./AccountMenu";
 
 const ITEMS = [
   { to: "/", label: "Overview" },
+  { to: "/scan", label: "Scan" },
+  { to: "/history", label: "History" },
   { to: "/how-it-works", label: "How It Works" },
 ] as const;
 

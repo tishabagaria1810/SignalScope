@@ -36,15 +36,22 @@ export interface RobustnessRow {
 }
 
 export interface Provenance {
-  c2pa: string;
-  exif: string;
-  editingHistory: string;
-  source: string;
+  c2pa: { status: string; label?: string };
+  exif: { status: string; label?: string; fields?: any };
+  editingHistory: { status: string; label?: string };
+  source: { status: string; label?: string };
 }
 
-export interface Attribution {
-  family: string;
-  probability: number;
+export interface GeneratorAttribution {
+  status: string;
+  reason?: string;
+  family?: string;
+  probability?: number;
+}
+
+export interface CaptionConsistency {
+  status: string;
+  reason?: string;
 }
 
 export interface AnalysisResult {
@@ -60,8 +67,8 @@ export interface AnalysisResult {
   evidence: EvidenceItem[];
   robustness: RobustnessRow[];
   provenance: Provenance;
-  attribution: Attribution[];
-  caption: string;
+  attribution?: GeneratorAttribution;
+  captionConsistency?: CaptionConsistency;
 }
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
@@ -149,18 +156,8 @@ function buildRobustness(verdict: Verdict, confidence: number): RobustnessRow[] 
       { id: "original", label: "Original", note: "Unmodified upload", delta: 0 },
       { id: "jpeg", label: "JPEG q60", note: "Recompressed", delta: -4.2 },
       { id: "resized", label: "Resized 50%", note: "Bicubic downscale", delta: -6.8 },
-      {
-        id: "screenshot",
-        label: "Screenshot",
-        note: "Re-captured from display",
-        delta: -9.5,
-      },
-      {
-        id: "edited",
-        label: "Lightly edited",
-        note: "Curves + light crop",
-        delta: -3.1,
-      },
+      { id: "screenshot", label: "Screenshot", note: "Re-captured from display", delta: -9.5 },
+      { id: "edited", label: "Lightly edited", note: "Curves + light crop", delta: -3.1 },
     ];
 
   return perturbations.map((p) => {
@@ -181,9 +178,79 @@ export interface AnalyzeInput {
   bytes: number;
 }
 
-/** Replace this body with a fetch to the prediction API when it exists. */
 export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult> {
   const seed = hash(`${input.filename}:${input.bytes}:${input.width}`);
+
+  
+  try {
+    const imgResponse = await fetch(input.imageUrl);
+    const blob = await imgResponse.blob();
+    const formData = new FormData();
+    formData.append("file", blob, input.filename);
+
+    
+    const apiRes = await fetch("http://localhost:8000/scan", {
+      method: "POST",
+      body: formData,
+    });
+
+    
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      const verdict = data.verdict.label === "AI-generated" ? "synthetic" : "authentic";
+      const confidence = Math.round(data.verdict.confidence * 1000) / 10;
+      
+      let dynamicEvidence = buildEvidence(seed);
+      if (data.explanation && data.explanation.evidence && Array.isArray(data.explanation.evidence)) {
+        dynamicEvidence = data.explanation.evidence.map((item: any, i: number) => ({
+          id: item.id || `${item.kind}-${i}`,
+          index: `0${i + 1}`,
+          kind: item.kind,
+          title: item.title,
+          summary: item.description,
+          detail: `Confidence: ${(item.confidence * 100).toFixed(1)}%`,
+          region: {
+            x: (item.bbox.x / input.width) * 100,
+            y: (item.bbox.y / input.height) * 100,
+            w: (item.bbox.width / input.width) * 100,
+            h: (item.bbox.height / input.height) * 100,
+          },
+          weight: item.weight,
+        }));
+      }
+
+      return {
+        id: `scan_${seed.toString(36)}_${Date.now().toString(36)}`,
+        filename: input.filename,
+        createdAt: new Date().toISOString(),
+        imageUrl: input.imageUrl,
+        width: input.width,
+        height: input.height,
+        bytes: input.bytes,
+        verdict,
+        confidence,
+        evidence: dynamicEvidence,
+        robustness: buildRobustness(verdict, confidence),
+        provenance: data.provenance || {
+          c2pa: { status: "not_present", label: "Not present" },
+          exif: { status: "not_available", label: "No camera metadata available" },
+          editingHistory: { status: "not_determined", label: "Not determined" },
+          source: { status: "uploaded_directly", label: "Uploaded directly to SignalScope" },
+        },
+        attribution: data.generatorAttribution || {
+          status: "not_available",
+          reason: "No generator-attribution model is installed."
+        },
+        captionConsistency: data.captionConsistency || {
+          status: "not_evaluated",
+          reason: "No independent image-caption consistency analysis is available."
+        },
+      };
+    }
+  } catch (error) {
+    console.warn("Backend API failed, falling back to mock logic:", error);
+  }
+
   const bucket = seed % 10;
   const verdict: Verdict = bucket < 5 ? "synthetic" : bucket < 8 ? "authentic" : "uncertain";
   const base =
@@ -203,42 +270,25 @@ export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult>
     evidence: buildEvidence(seed),
     robustness: buildRobustness(verdict, confidence),
     provenance: {
-      c2pa:
-        verdict === "synthetic"
-          ? "No signed C2PA manifest found"
-          : "C2PA manifest present but unverified issuer",
-      exif:
-        verdict === "authentic"
-          ? "Camera make/model, lens and exposure fields intact"
-          : "EXIF largely absent; only dimensions and colour profile remain",
-      editingHistory:
-        verdict === "authentic"
-          ? "One re-save detected (colour profile conversion)"
-          : "Re-encoded at least twice; no editor signature",
-      source: "Uploaded by user — no upstream URL available",
+      c2pa: { status: "not_present", label: "Not present" },
+      exif: { status: "not_available", label: "No camera metadata available" },
+      editingHistory: { status: "not_determined", label: "Not determined" },
+      source: { status: "uploaded_directly", label: "Uploaded directly to SignalScope" },
     },
-    attribution:
-      verdict === "synthetic"
-        ? [
-            { family: "Latent diffusion", probability: 0.54 },
-            { family: "Cascaded diffusion", probability: 0.21 },
-            { family: "GAN (StyleGAN family)", probability: 0.14 },
-            { family: "Unattributed / other", probability: 0.11 },
-          ]
-        : [
-            { family: "Unattributed / other", probability: 0.62 },
-            { family: "Latent diffusion", probability: 0.19 },
-            { family: "GAN (StyleGAN family)", probability: 0.11 },
-            { family: "Cascaded diffusion", probability: 0.08 },
-          ],
-    caption:
-      verdict === "synthetic"
-        ? "A close-up subject lit from one side, with unusually even surface detail."
-        : "A photographed scene with mixed natural and artificial lighting.",
+    attribution: {
+      status: "not_available",
+      reason: "No generator-attribution model is installed."
+    },
+    captionConsistency: {
+      status: "not_evaluated",
+      reason: "No independent image-caption consistency analysis is available."
+    },
   };
 }
 
 /* ---------------------------------- history --------------------------------- */
+
+import { supabase } from './supabase';
 
 export interface HistoryEntry {
   id: string;
@@ -248,8 +298,6 @@ export interface HistoryEntry {
   verdict: Verdict;
   confidence: number;
 }
-
-const HISTORY_KEY = "signalscope.history.v1";
 
 export const SEED_HISTORY: HistoryEntry[] = [
   {
@@ -278,27 +326,115 @@ export const SEED_HISTORY: HistoryEntry[] = [
   },
 ];
 
-export function loadHistory(): HistoryEntry[] {
-  if (typeof window === "undefined") return SEED_HISTORY;
+/**
+ * Compress an image URL to a tiny 80×80 JPEG base64 (~3-5 KB).
+ * Small enough to store in a Supabase TEXT column — persists across browser reloads.
+ */
+async function compressToThumbnail(imageUrl: string): Promise<string | null> {
+  if (!imageUrl || typeof document === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    if (!raw) return SEED_HISTORY;
-    const parsed = JSON.parse(raw) as HistoryEntry[];
-    return [...parsed, ...SEED_HISTORY];
+    return await new Promise<string | null>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const SIZE = 80;
+        const canvas = document.createElement('canvas');
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        // Cover-crop to square
+        const scale = Math.max(SIZE / img.width, SIZE / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = () => resolve(null);
+      img.src = imageUrl;
+    });
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Load scan history from Supabase.
+ * - Not logged in → SEED_HISTORY (demo data)
+ * - Logged in, no scans → [] (empty, show CTA)
+ * - Logged in, has scans → real data with persistent thumbnails
+ */
+export async function loadHistory(): Promise<HistoryEntry[]> {
+  if (typeof window === 'undefined') return SEED_HISTORY;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return SEED_HISTORY;
+
+    const { data, error } = await supabase
+      .from('scans')
+      .select('id, file_name, verdict, confidence, created_at, thumbnail_url')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      if (error.code === '42P01' || error.code === '42703') {
+        console.info('[SignalScope] scans table missing or wrong schema — run the SQL migration.');
+      } else {
+        console.warn('[SignalScope] loadHistory error:', error.message);
+      }
+      return SEED_HISTORY;
+    }
+
+    if (!data || data.length === 0) return []; // Logged in but no scans yet
+
+    return data.map((row) => ({
+      id: row.id,
+      filename: row.file_name,
+      createdAt: row.created_at,
+      thumbnail: row.thumbnail_url ?? '',  // ✅ Persists across reloads
+      verdict: row.verdict as Verdict,
+      confidence: row.confidence,
+    }));
+  } catch (e: any) {
+    console.warn('[SignalScope] loadHistory exception:', e?.message ?? e);
     return SEED_HISTORY;
   }
 }
 
-export function saveToHistory(entry: HistoryEntry) {
-  if (typeof window === "undefined") return;
+/**
+ * Save a scan result to Supabase.
+ * Compresses the image to an 80×80 JPEG and stores as base64 in `thumbnail_url`.
+ */
+export async function saveToHistory(entry: HistoryEntry): Promise<void> {
+  if (typeof window === 'undefined') return;
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    const existing = raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
-    const next = [entry, ...existing].slice(0, 8);
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  } catch {
-    /* storage full or unavailable — history is non-critical */
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.warn('[SignalScope] saveToHistory: no active session — scan not saved');
+      return;
+    }
+
+    const thumbnail_url = await compressToThumbnail(entry.thumbnail);
+
+    const { error } = await supabase.from('scans').upsert(
+      {
+        id: entry.id,
+        user_id: session.user.id,
+        file_name: entry.filename,
+        verdict: entry.verdict,
+        confidence: entry.confidence,
+        created_at: entry.createdAt,
+        thumbnail_url: thumbnail_url ?? null,
+      },
+      { onConflict: 'id' }
+    );
+
+    if (error) {
+      console.warn('[SignalScope] saveToHistory failed:', error.message, '| code:', error.code);
+    } else {
+      console.info('[SignalScope] ✅ Scan saved to Supabase:', entry.id);
+    }
+  } catch (e: any) {
+    console.warn('[SignalScope] saveToHistory exception:', e?.message ?? e);
   }
 }
 
@@ -310,8 +446,8 @@ export function formatBytes(bytes: number) {
 
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
   });
 }

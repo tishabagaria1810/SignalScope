@@ -3,12 +3,30 @@ import { AnimatePresence, motion } from "motion/react";
 import { LogOut, Settings, User } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Glass } from "./glass";
+import { supabase } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 
-const user = {
-  fullName: "Ada Lovelace",
-  email: "ada@signalscope.io",
-  initials: "AL",
-};
+function getInitials(email: string): string {
+  if (!email) return "?";
+  const parts = email.split("@")[0].split(/[._-]/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return email.slice(0, 2).toUpperCase();
+}
+
+function getInitialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
+function getDisplayName(email: string): string {
+  if (!email) return "User";
+  return email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const contentAnimations = {
   initial: { opacity: 0, filter: "blur(8px)" },
@@ -18,24 +36,24 @@ const contentAnimations = {
 
 const SPRING = { type: "spring", bounce: 0.15, duration: 0.4 };
 
-export function AccountMenu() {
+interface AccountMenuProps {
+  session: Session | null;
+}
+
+export function AccountMenu({ session }: AccountMenuProps) {
   const navigate = useNavigate();
-  const [signedIn, setSignedIn] = useState(false);
   const [open, setOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Check mock authentication state
-  useEffect(() => {
-    const checkAuth = () => {
-      const isAuth = localStorage.getItem("mock_auth") === "true";
-      setSignedIn(isAuth);
-    };
-    checkAuth();
-    // Re-check when storage changes (useful if modified in another tab/window)
-    window.addEventListener("storage", checkAuth);
-    return () => window.removeEventListener("storage", checkAuth);
-  }, []);
+  const signedIn = !!session;
+  const userEmail = session?.user?.email ?? "";
+  // Prefer the real name collected at signup (user_metadata.full_name).
+  // Falls back to guessing a name from the email for accounts created
+  // before this field existed, or via any passwordless-only signup path.
+  const fullName = (session?.user?.user_metadata?.full_name as string | undefined) ?? "";
+  const initials = fullName ? getInitialsFromName(fullName) : getInitials(userEmail);
+  const displayName = fullName || getDisplayName(userEmail);
 
   useEffect(() => {
     if (!open) return;
@@ -48,22 +66,14 @@ export function AccountMenu() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  const toggleOpen = () => {
-    if (signedIn) {
-      setOpen(!open);
-    }
-  };
-
   const handleSignOutClick = () => {
     setOpen(false);
     setShowLogoutConfirm(true);
   };
 
-  const confirmSignOut = () => {
-    localStorage.removeItem("mock_auth");
-    setSignedIn(false);
+  const confirmSignOut = async () => {
+    await supabase.auth.signOut();
     setShowLogoutConfirm(false);
-    window.dispatchEvent(new Event("storage"));
     navigate({ to: "/" });
   };
 
@@ -71,7 +81,7 @@ export function AccountMenu() {
     <div className="relative" ref={rootRef}>
       {signedIn ? (
         <button
-          onClick={toggleOpen}
+          onClick={() => setOpen(!open)}
           className="glass-surface ml-1 grid size-9 place-items-center rounded-[999px] text-muted-foreground transition-colors hover:text-foreground sm:size-10 overflow-hidden"
         >
           <motion.div
@@ -79,7 +89,7 @@ export function AccountMenu() {
             transition={SPRING}
             className="flex h-full w-full items-center justify-center bg-primary/20 text-[13px] font-semibold text-primary"
           >
-            {user.initials}
+            {initials}
           </motion.div>
         </button>
       ) : (
@@ -99,7 +109,7 @@ export function AccountMenu() {
             initial={{ opacity: 0, scale: 0.95, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -10 }}
-            className="absolute right-0 top-[calc(100%+20px)] z-50 w-56"
+            className="absolute right-0 top-[calc(100%+20px)] z-50 w-64"
           >
             <Glass className="overflow-hidden p-1 shadow-2xl">
               <div className="flex items-center gap-3 p-3">
@@ -108,7 +118,7 @@ export function AccountMenu() {
                   transition={SPRING}
                   className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[14px] font-semibold text-primary"
                 >
-                  {user.initials}
+                  {initials}
                 </motion.div>
                 <motion.div
                   initial={contentAnimations.initial}
@@ -116,8 +126,8 @@ export function AccountMenu() {
                   exit={contentAnimations.exit}
                   className="min-w-0"
                 >
-                  <p className="truncate text-[13px] font-medium text-foreground">{user.fullName}</p>
-                  <p className="truncate text-[11px] text-subtle-foreground">{user.email}</p>
+                  <p className="truncate text-[13px] font-medium text-foreground">{displayName}</p>
+                  <p className="truncate text-[11px] text-subtle-foreground">{userEmail}</p>
                 </motion.div>
               </div>
 
@@ -143,7 +153,7 @@ export function AccountMenu() {
               </motion.div>
 
               <div className="mt-1 pb-1 flex justify-center">
-                <p className="text-[10px] text-subtle-foreground opacity-60">Secured by Signal Scope</p>
+                <p className="text-[10px] text-subtle-foreground opacity-60">Secured by Supabase</p>
               </div>
             </Glass>
           </motion.div>
