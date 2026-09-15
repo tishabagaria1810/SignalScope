@@ -15,6 +15,8 @@ import appCss from "../styles.css?url";
 import { ThemeProvider } from "@/lib/theme";
 import { MeshBackdrop } from "@/components/MeshBackdrop";
 import { PillNav } from "@/components/PillNav";
+import { supabase } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 
 function NotFoundComponent() {
   return (
@@ -124,38 +126,51 @@ import { AccountMenu } from "@/components/AccountMenu";
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [isAuth, setIsAuth] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = () => {
-      setIsAuth(localStorage.getItem("mock_auth") === "true");
-    };
-    checkAuth();
-    window.addEventListener("storage", checkAuth);
-    // Note: Since auth state affects layout globally, we also want to catch
-    // local updates without page reload, so we listen to custom events or
-    // just rely on the router/refresh. For this mock, a simple interval or storage listener is fine.
-    // However, since we navigate, the component might re-render, but to be safe:
-    const interval = setInterval(checkAuth, 1000);
-    return () => {
-      window.removeEventListener("storage", checkAuth);
-      clearInterval(interval);
-    };
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // Listen for auth state changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const isAuth = !!session;
+
+  // Don't flash unauthenticated layout during initial session check
+  if (loading) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <MeshBackdrop />
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <MeshBackdrop />
-        
+
         {isAuth ? (
           <>
             <SidebarNav />
             {/* Top right Avatar */}
             <div className="fixed right-6 top-6 z-50">
-              <AccountMenu />
+              <AccountMenu session={session} />
             </div>
-            
+
             <div className="ml-64 flex min-h-screen flex-col">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.main

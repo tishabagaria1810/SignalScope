@@ -56,10 +56,10 @@ const LABELS = [
   { at: "right-[9%] bottom-[28%]", text: "PRNU · absent" },
 ];
 
-function StageRail({ progress }: { progress: MotionValue<number> }) {
+function StageRail({ progress, onStageClick }: { progress: MotionValue<number>; onStageClick: (index: number) => void }) {
   return (
     <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
-      <Glass pill className="flex items-center gap-1 px-2 py-1.5 sm:gap-2 sm:px-3">
+      <Glass pill className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 sm:gap-2 sm:px-3">
         {STAGES.map((stage, i) => {
           const start = i / STAGES.length;
           const opacity = useTransform(
@@ -68,13 +68,15 @@ function StageRail({ progress }: { progress: MotionValue<number> }) {
             [0.35, 1, 1, 0.35],
           );
           return (
-            <motion.span
+            <motion.button
               key={stage}
               style={{ opacity }}
-              className="relative z-[3] px-2 font-mono text-[10px] uppercase tracking-[0.2em] text-foreground sm:text-[11px]"
+              onClick={() => onStageClick(i)}
+              type="button"
+              className="relative z-[3] cursor-pointer px-2 font-mono text-[10px] uppercase tracking-[0.2em] text-foreground transition-[opacity,color] hover:!opacity-100 hover:text-primary sm:text-[11px]"
             >
               {stage}
-            </motion.span>
+            </motion.button>
           );
         })}
       </Glass>
@@ -87,6 +89,14 @@ export function ScrollZoomHero() {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
   const p = useSpring(scrollYProgress, { stiffness: 240, damping: 23, restDelta: 0.0005 });
+
+  const handleStageClick = (index: number) => {
+    if (!ref.current) return;
+    const scrollableDistance = ref.current.clientHeight - window.innerHeight;
+    const targetProgress = index / (STAGES.length - 1);
+    const targetY = ref.current.getBoundingClientRect().top + window.scrollY + (scrollableDistance * targetProgress);
+    window.scrollTo({ top: targetY, behavior: 'smooth' });
+  };
 
   const frameWidth = useTransform(
     p,
@@ -206,7 +216,7 @@ export function ScrollZoomHero() {
           </motion.div>
         </motion.div>
 
-        <StageRail progress={p} />
+        <StageRail progress={p} onStageClick={handleStageClick} />
       </div>
     </section>
   );

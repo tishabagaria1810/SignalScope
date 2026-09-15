@@ -15,7 +15,12 @@ dist-ssr
 .tanstack/**
 .nitro
 *.local
-
+.env
+sqlite.db
+sqlite.db-journal
+test-db.ts
+test-regression.ts
+app.config.*.js
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
