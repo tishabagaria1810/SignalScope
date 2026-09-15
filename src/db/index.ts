@@ -1,7 +1,10 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
 import * as schema from './schema';
+import dotenv from 'dotenv';
 
-const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/signalscope';
-const client = postgres(connectionString);
-export const db = drizzle(client, { schema });
+dotenv.config();
+
+const dbPath = process.env.DATABASE_URL || 'sqlite.db';
+const sqlite = new Database(dbPath);
+export const db = drizzle(sqlite, { schema });

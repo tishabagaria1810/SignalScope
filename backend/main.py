@@ -37,9 +37,19 @@ async def scan_image(file: UploadFile = File(...)):
 
     try:
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        img_bytes = io.BytesIO(contents)
+        image = Image.open(img_bytes)
+        image.verify() # Validates format without executing/decoding
+        
+        # Verify it's a supported format
+        if image.format not in ["JPEG", "PNG", "WEBP"]:
+            return JSONResponse(status_code=415, content={"error": f"Unsupported media type: {image.format}. Only JPEG, PNG, and WebP are allowed."})
+            
+        # Reopen for actual processing
+        img_bytes.seek(0)
+        image = Image.open(img_bytes).convert("RGB")
     except Exception as e:
-        return JSONResponse(status_code=400, content={"error": "Invalid image file"})
+        return JSONResponse(status_code=400, content={"error": "Invalid or corrupted image file"})
 
     # Use the full inference pipeline (ResNet crops + VAE heuristics)
     try:
