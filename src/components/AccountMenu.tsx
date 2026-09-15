@@ -15,6 +15,14 @@ function getInitials(email: string): string {
   return email.slice(0, 2).toUpperCase();
 }
 
+function getInitialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
 function getDisplayName(email: string): string {
   if (!email) return "User";
   return email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -40,8 +48,12 @@ export function AccountMenu({ session }: AccountMenuProps) {
 
   const signedIn = !!session;
   const userEmail = session?.user?.email ?? "";
-  const initials = getInitials(userEmail);
-  const displayName = getDisplayName(userEmail);
+  // Prefer the real name collected at signup (user_metadata.full_name).
+  // Falls back to guessing a name from the email for accounts created
+  // before this field existed, or via any passwordless-only signup path.
+  const fullName = (session?.user?.user_metadata?.full_name as string | undefined) ?? "";
+  const initials = fullName ? getInitialsFromName(fullName) : getInitials(userEmail);
+  const displayName = fullName || getDisplayName(userEmail);
 
   useEffect(() => {
     if (!open) return;
