@@ -9,7 +9,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { ThemeProvider } from "@/lib/theme";
@@ -110,7 +110,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="select-none">
         {children}
         <Scripts />
       </body>
@@ -118,27 +118,75 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+import { SidebarNav } from "@/components/SidebarNav";
+import { AccountMenu } from "@/components/AccountMenu";
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [isAuth, setIsAuth] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = () => {
+      setIsAuth(localStorage.getItem("mock_auth") === "true");
+    };
+    checkAuth();
+    window.addEventListener("storage", checkAuth);
+    // Note: Since auth state affects layout globally, we also want to catch
+    // local updates without page reload, so we listen to custom events or
+    // just rely on the router/refresh. For this mock, a simple interval or storage listener is fine.
+    // However, since we navigate, the component might re-render, but to be safe:
+    const interval = setInterval(checkAuth, 1000);
+    return () => {
+      window.removeEventListener("storage", checkAuth);
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <MeshBackdrop />
-        <PillNav />
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.main
-            key={pathname}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.4, ease: [0.22, 0.61, 0.28, 1] }}
-          >
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
-          </motion.main>
-        </AnimatePresence>
+        
+        {isAuth ? (
+          <>
+            <SidebarNav />
+            {/* Top right Avatar */}
+            <div className="fixed right-6 top-6 z-50">
+              <AccountMenu />
+            </div>
+            
+            <div className="ml-64 flex min-h-screen flex-col">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.main
+                  key={pathname}
+                  className="flex-1"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.4, ease: [0.22, 0.61, 0.28, 1] }}
+                >
+                  <Outlet />
+                </motion.main>
+              </AnimatePresence>
+            </div>
+          </>
+        ) : (
+          <>
+            <PillNav />
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.main
+                key={pathname}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.4, ease: [0.22, 0.61, 0.28, 1] }}
+              >
+                <Outlet />
+              </motion.main>
+            </AnimatePresence>
+          </>
+        )}
       </ThemeProvider>
     </QueryClientProvider>
   );

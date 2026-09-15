@@ -1,13 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { motion } from "motion/react";
+import { motion, useScroll, useTransform } from "motion/react";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { Glass } from "@/components/glass";
+import { AccountMenu } from "./AccountMenu";
 
 const ITEMS = [
   { to: "/", label: "Overview" },
-  { to: "/scan", label: "Scan" },
-  { to: "/history", label: "History" },
   { to: "/how-it-works", label: "How It Works" },
 ] as const;
 
@@ -15,15 +14,40 @@ export function PillNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { theme, toggle } = useTheme();
 
+  const { scrollY } = useScroll();
+  const backgroundColor = useTransform(
+    scrollY,
+    [0, 50],
+    ["rgba(131, 155, 250, 0)", "rgba(131, 155, 250, 0.03)"]
+  );
+  const backdropFilter = useTransform(
+    scrollY,
+    [0, 50],
+    ["blur(0px)", "blur(12px)"]
+  );
+  const borderBottom = useTransform(
+    scrollY,
+    [0, 50],
+    ["1px solid rgba(131, 155, 250, 0)", "1px solid rgba(131, 155, 250, 0.08)"]
+  );
+
   return (
-    <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-3 sm:top-6">
+    <motion.header 
+      style={{ backgroundColor, backdropFilter, borderBottom }}
+      className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-6 py-4 sm:px-10 sm:py-5 transition-colors duration-200"
+    >
+      {/* Logo */}
+      <Link to="/" className="relative z-10 flex h-full items-center gap-2 outline-none select-none">
+        <span className="text-[26px] font-bold tracking-tight sm:text-[32px] text-[var(--signal)] pb-1">
+          Signal Scope
+        </span>
+      </Link>
+      {/* Nav */}
       <Glass
         pill
         className="flex h-[58px] items-center gap-1 px-2 sm:h-[68px] sm:gap-1.5 sm:px-3"
       >
-        <span className="ml-2 mr-1 hidden text-[15px] font-semibold tracking-tight sm:block">
-          SignalScope
-        </span>
+
         <nav className="relative flex items-center">
           {ITEMS.map((item) => {
             const active = pathname === item.to;
@@ -51,23 +75,8 @@ export function PillNav() {
             );
           })}
         </nav>
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label="Toggle colour theme"
-          className="glass-surface ml-1 grid size-9 place-items-center rounded-[999px] text-muted-foreground transition-colors hover:text-foreground sm:size-10"
-        >
-          <motion.span
-            key={theme}
-            initial={{ rotate: -70, opacity: 0, scale: 0.8 }}
-            animate={{ rotate: 0, opacity: 1, scale: 1 }}
-            transition={{ type: "spring", stiffness: 240, damping: 23 }}
-            className="relative z-[3]"
-          >
-            {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
-          </motion.span>
-        </button>
+        <AccountMenu />
       </Glass>
-    </div>
+    </motion.header>
   );
 }

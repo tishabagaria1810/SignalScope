@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { Fingerprint, Layers, ScanLine, ShieldQuestion } from "lucide-react";
 import { ScrollZoomHero } from "@/components/ScrollZoomHero";
 import { Eyebrow, Glass, MagneticButton, TiltGlass } from "@/components/glass";
+import { AnalysisStory } from "@/components/AnalysisStory";
 import { CALIBRATION_NOTE } from "@/lib/analysis";
 
 export const Route = createFileRoute("/")({
@@ -82,6 +83,8 @@ function Overview() {
           ))}
         </div>
       </section>
+
+      <AnalysisStory />
 
       <section className="mx-auto max-w-6xl px-4 py-14 sm:py-20">
         <Glass className="p-6 sm:p-10">

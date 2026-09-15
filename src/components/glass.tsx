@@ -29,16 +29,17 @@ interface GlassProps extends HTMLAttributes<HTMLDivElement> {
   children?: ReactNode;
   refract?: boolean | undefined;
   pill?: boolean | undefined;
+  noSheen?: boolean | undefined;
 }
 
-export function Glass({ className, children, refract, pill, ...rest }: GlassProps) {
+export function Glass({ className, children, refract, pill, noSheen, ...rest }: GlassProps) {
   const sheen = useSheen<HTMLDivElement>();
   return (
     <div
       {...rest}
-      ref={sheen.ref}
-      onMouseMove={sheen.onMouseMove}
-      onMouseLeave={sheen.onMouseLeave}
+      ref={noSheen ? undefined : sheen.ref}
+      onMouseMove={noSheen ? undefined : sheen.onMouseMove}
+      onMouseLeave={noSheen ? undefined : sheen.onMouseLeave}
       className={cn(
         "glass-surface",
         refract && "glass-refract",

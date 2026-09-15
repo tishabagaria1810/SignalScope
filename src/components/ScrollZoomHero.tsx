@@ -91,13 +91,13 @@ export function ScrollZoomHero() {
   const frameWidth = useTransform(
     p,
     [0, 0.42],
-    reduce ? ["90%", "90%"] : ["58%", "94%"],
+    reduce ? ["90%", "90%"] : ["66%", "94%"],
     { clamp: true },
   );
   const frameHeight = useTransform(
     p,
     [0, 0.42],
-    reduce ? ["62vh", "62vh"] : ["52vh", "84vh"],
+    reduce ? ["68vh", "68vh"] : ["64vh", "84vh"],
     { clamp: true },
   );
   const frameRadius = useTransform(p, [0, 0.42], reduce ? [28, 28] : [999, 28], {
@@ -105,8 +105,13 @@ export function ScrollZoomHero() {
   });
   const imageScale = useTransform(p, [0, 0.55], reduce ? [1.04, 1.04] : [1, 1.85]);
   const imageY = useTransform(p, [0, 1], reduce ? [0, 0] : [0, -60]);
+  const imageBrightness = useTransform(p, [0, 0.16], reduce ? [1, 1] : [0.4, 1]);
   const grade = useTransform(p, [0.25, 0.6], reduce ? [1, 1] : [1, 0.55]);
-  const imageFilter = useTransform(grade, (g) => `saturate(${g}) contrast(${2 - g})`);
+  const imageFilter = useTransform(p, () => {
+    const g = grade.get();
+    const b = imageBrightness.get();
+    return `brightness(${b}) saturate(${g}) contrast(${2 - g})`;
+  });
 
   const headlineOpacity = useTransform(p, [0, 0.16], [1, 0]);
   const headlineScale = useTransform(p, [0, 0.16], [1, 1.1]);
@@ -123,31 +128,7 @@ export function ScrollZoomHero() {
   return (
     <section ref={ref} className="relative h-[420vh]">
       <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden">
-        {/* headline layer */}
-        <motion.div
-          style={{ opacity: headlineOpacity, scale: headlineScale, y: headlineY }}
-          className="pointer-events-none absolute inset-x-0 top-[16vh] z-20 mx-auto max-w-3xl px-6 text-center"
-        >
-          <Eyebrow>SignalScope</Eyebrow>
-          <h1 className="text-balance-tight mt-4 text-[34px] font-semibold leading-[1.05] sm:text-[54px] lg:text-[64px]">
-            Telling real from synthetic in the age of generative media.
-          </h1>
-          <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground sm:text-base">
-            Upload an image, watch the forensic pass, and read the evidence behind every
-            likelihood — not a verdict shouted without proof.
-          </p>
-          <div className="pointer-events-auto mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/scan">
-              <MagneticButton>
-                <ScanLine className="size-4" /> Scan an image
-              </MagneticButton>
-            </Link>
-            <span className="inline-flex items-center gap-2 text-[13px] text-subtle-foreground">
-              <ArrowDown className="size-3.5" /> scroll to inspect
-            </span>
-          </div>
-        </motion.div>
-
+        
         {/* glass frame + forensic image */}
         <motion.div
           style={{ width: frameWidth, height: frameHeight, borderRadius: frameRadius }}
@@ -161,6 +142,19 @@ export function ScrollZoomHero() {
             style={{ scale: imageScale, y: imageY, filter: imageFilter }}
             className="absolute inset-0 size-full object-cover"
           />
+
+          {/* Headline / Tagline perfectly centered in the image container */}
+          <motion.div
+            style={{ opacity: headlineOpacity, scale: headlineScale, y: headlineY }}
+            className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4"
+          >
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white drop-shadow-2xl">
+              See beyond the pixels.
+            </h1>
+            <p className="mt-4 text-lg sm:text-xl text-white/90 max-w-2xl drop-shadow-md">
+              Uncover the invisible traces of synthetic manipulation.
+            </p>
+          </motion.div>
 
           <motion.div style={{ opacity: labelOpacity }} className="absolute inset-0 z-[3]">
             {LABELS.map((l) => (
