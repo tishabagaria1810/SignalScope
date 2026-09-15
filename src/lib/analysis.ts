@@ -183,7 +183,7 @@ export interface AnalyzeInput {
 
 export async function analyzeImage(input: AnalyzeInput): Promise<AnalysisResult> {
   try {
-    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const aiServiceUrl = import.meta.env.VITE_AI_SERVICE_URL || 'http://localhost:8000';
     
     // Fetch the Blob from the object URL
     const imageRes = await fetch(input.imageUrl);

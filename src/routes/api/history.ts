@@ -1,13 +1,18 @@
+// @ts-ignore: createAPIFileRoute is missing from package exports in this version
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { db } from '@/db';
 import { scans } from '@/db/schema';
 import { desc } from 'drizzle-orm';
 
 export const APIRoute = createAPIFileRoute('/api/history')({
-  GET: async ({ request }) => {
+  GET: async ({ request }: { request: Request }) => {
     try {
       const history = await db.select().from(scans).orderBy(desc(scans.createdAt)).limit(50);
-      return new Response(JSON.stringify(history), {
+      const parsedHistory = history.map(row => ({
+        ...row,
+        evidence: typeof row.evidence === 'string' ? JSON.parse(row.evidence) : row.evidence
+      }));
+      return new Response(JSON.stringify(parsedHistory), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -15,7 +20,7 @@ export const APIRoute = createAPIFileRoute('/api/history')({
       return new Response(JSON.stringify({ error: 'Failed to fetch history' }), { status: 500 });
     }
   },
-  POST: async ({ request }) => {
+  POST: async ({ request }: { request: Request }) => {
     try {
       const body = await request.json();
       const newScan = await db.insert(scans).values({
